@@ -1,11 +1,17 @@
 package main
 
 import (
+	"broker-service/logs"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"log"
 	"net/http"
+	"time"
 )
 
 type RequestPayload struct {
@@ -46,10 +52,54 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 	switch requestPayload.Action {
 	case "auth":
 		app.authenticate(w, requestPayload.Auth)
+	case "log":
+		app.logItem(w, requestPayload.Log)
 	default:
 		fmt.Println("BadRequest during action cases")
 		app.errorJSON(w, errors.New("invalid action"))
 	}
+}
+
+func (app *Config) logItem(w http.ResponseWriter, entry logPayload) {
+	jsonData, err := json.MarshalIndent(entry, "", "\t") //change to marshall??
+	if err != nil {
+		log.Println("Error during marshalling jsonData in log service")
+		app.errorJSON(w, err)
+		return
+	}
+
+	logServiceURL := "http://log-service:82/log"
+
+	request, err := http.NewRequest("POST", logServiceURL, bytes.NewBuffer(jsonData))
+
+	if err != nil {
+		log.Println("Error during creating request in log service")
+		app.errorJSON(w, err)
+		return
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		log.Println("Error during doing request in log service")
+		app.errorJSON(w, err)
+		return
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusAccepted {
+		log.Println("Response status code is not accepted in log service")
+		app.errorJSON(w, err)
+		return
+	}
+
+	var payLoad jsonResponse
+	payLoad.Error = false
+	payLoad.Message = "logged"
+
+	app.writeJSON(w, http.StatusAccepted, payLoad)
 }
 
 func (app *Config) authenticate(w http.ResponseWriter, a authPayload) {
@@ -106,4 +156,45 @@ func (app *Config) authenticate(w http.ResponseWriter, a authPayload) {
 	payload.Data = jsonFromService.Data
 
 	app.writeJSON(w, http.StatusOK, payload)
+}
+
+func (app *Config) LogViagRPC(w http.ResponseWriter, r *http.Request) {
+	var requestPayload RequestPayload
+
+	err := app.readJSON(w, r, &requestPayload)
+	if err != nil {
+		fmt.Println("Error in broker-service/handlers, 166")
+		app.errorJSON(w, err)
+		return
+	}
+
+	conn, err := grpc.NewClient("log-service:50001", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		fmt.Println("Error in broker-service/handlers, 173")
+		app.errorJSON(w, err)
+		return
+	}
+	defer conn.Close()
+
+	c := logs.NewLogServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	_, err = c.WriteLog(ctx, &logs.LogRequest{
+		LogEntry: &logs.Log{
+			Name: requestPayload.Log.Name,
+			Data: requestPayload.Log.Data,
+		},
+	})
+	if err != nil {
+		fmt.Println("Error in broker-service/handlers, 190")
+		app.errorJSON(w, err)
+		return
+	}
+
+	var payLoad jsonResponse
+	payLoad.Error = false
+	payLoad.Message = "logged"
+
+	app.writeJSON(w, http.StatusAccepted, payLoad)
 }

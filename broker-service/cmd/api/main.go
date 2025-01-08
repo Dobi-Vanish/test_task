@@ -8,7 +8,9 @@ import (
 
 const webPort = "82"
 
-type Config struct{}
+type Config struct {
+	Client *http.Client
+}
 
 func main() {
 	app := Config{}
