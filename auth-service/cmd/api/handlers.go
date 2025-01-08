@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/golang-jwt/jwt"
 	"golang.org/x/crypto/bcrypt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -27,13 +30,13 @@ func (app *Config) Authenticate(w http.ResponseWriter, r *http.Request) {
 
 	err := app.readJSON(w, r, &requestPayload)
 	if err != nil {
-		fmt.Println("Error in auuth service during reading the payload")
+		fmt.Println("Error in auth service during reading the payload")
 		app.errorJSON(w, err, http.StatusBadRequest)
 		return
 	}
 
 	// validate the user against the database
-	user, err := app.Models.User.GetByEmail(requestPayload.Email)
+	user, err := app.Repo.GetByEmail(requestPayload.Email)
 
 	if err != nil {
 		fmt.Println("Error in auth service, invalid credentials email")
@@ -41,7 +44,7 @@ func (app *Config) Authenticate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	valid, err := user.PasswordMatches(requestPayload.Password)
+	valid, err := app.Repo.PasswordMatches(requestPayload.Password, *user)
 	if err != nil || !valid {
 		fmt.Println("Error in auth service, password inmatches")
 		app.errorJSON(w, errors.New("invalid credentials"), http.StatusBadRequest)
@@ -57,6 +60,8 @@ func (app *Config) Authenticate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	err = app.logRequest("authentication", fmt.Sprintf("%s logged in", user.Email))
+
 	payload := jsonResponse{
 		Error:   false,
 		Message: fmt.Sprintf("Logged in user %s", user.Email),
@@ -69,15 +74,13 @@ func (app *Config) Authenticate(w http.ResponseWriter, r *http.Request) {
 			RefreshToken: userData.RefreshToken,
 		},
 	}
-	fmt.Println("Generated access token:", userData.AccessToken)
-	fmt.Println("Generated refresh token:", userData.HashedRefreshToken)
 	err = validateRefreshToken(userData.HashedRefreshToken, userData.RefreshToken)
 	if err != nil {
 		fmt.Println("Error in auth service, invalid refresh token")
 		return
 	}
 	fmt.Println("Refresh tokens validated")
-	err = app.Models.User.UpdateRefreshToken(userData.HashedRefreshToken, userData.ID)
+	err = app.Repo.UpdateRefreshToken(userData.HashedRefreshToken, userData.ID)
 	if err != nil {
 		fmt.Println("Error in auth service, refresh token hasn't been updated")
 		return
@@ -105,6 +108,33 @@ func generateTokens(userID int, ip, secretKey string) (*UserData, error) {
 	}, nil
 }
 
+func (app *Config) logRequest(name, data string) error {
+	var entry struct {
+		Name string `json:"name"`
+		Data string `json:"data"`
+	}
+
+	entry.Name = name
+	entry.Data = data
+
+	jsonData, err := json.MarshalIndent(entry, "", "\t") //change to marshall??
+	if err != nil {
+		log.Println("Error marshalling json Data in auth-service")
+		return err
+	}
+
+	logServiceURL := "http://log-service:82/log"
+
+	request, err := http.NewRequest("POST", logServiceURL, bytes.NewBuffer(jsonData))
+
+	_, err = app.Client.Do(request)
+	if err != nil {
+		log.Println("Error during doing log request in auth-service")
+		return err
+	}
+	return nil
+}
+
 func validateRefreshToken(hashedRefreshToken, refreshToken string) error {
 	decodedBytes, err := base64.StdEncoding.DecodeString(hashedRefreshToken)
 	err = bcrypt.CompareHashAndPassword(decodedBytes, []byte(refreshToken))
@@ -121,7 +151,6 @@ func generateRefreshToken(secretKey, ip string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	fmt.Println("Refresh token generated in generateRefreshToken function: ", hashedRefreshToken)
 	return refreshToken, base64.StdEncoding.EncodeToString(hashedRefreshToken), nil // Преобразование хеша в base64 перед хранением
 }
 
