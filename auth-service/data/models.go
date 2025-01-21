@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"log"
 	"time"
 
@@ -26,23 +25,6 @@ func NewPostgresRepository(pool *sql.DB) *PostgresRepository {
 	}
 }
 
-// New is the function used to create an instance of the data package. It returns the type
-// Model, which embeds all the types we want to be available to our application.
-// func New(dbPool *sql.DB) Models {
-// 	db = dbPool
-
-// 	return Models{
-// 		User: User{},
-// 	}
-// }
-
-// Models is the type for this package. Note that any model that is included as a member
-// in this type is available to us throughout the application, anywhere that the
-// app variable is used, provided that the model is also added in the New function.
-// type Models struct {
-// 	User User
-// }
-
 // User is the structure which holds one user from the database.
 type User struct {
 	ID        int       `json:"id"`
@@ -60,7 +42,7 @@ func (u *PostgresRepository) GetAll() ([]*User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
-	query := `select id, email, first_name, last_name, password, user_active, created_at, updated_at
+	query := `select id, email, first_name, last_name, password, active, created_at, updated_at
 	from users order by last_name`
 
 	rows, err := db.QueryContext(ctx, query)
@@ -99,7 +81,7 @@ func (u *PostgresRepository) GetByEmail(email string) (*User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
-	query := `select id, email, first_name, last_name, password, user_active, created_at, updated_at from users where email = $1`
+	query := `select id, email, first_name, last_name, password, active, created_at, updated_at from users where email = $1`
 
 	var user User
 	row := db.QueryRowContext(ctx, query, email)
@@ -131,7 +113,7 @@ func (u *PostgresRepository) GetOne(id int) (*User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
-	query := `select id, email, first_name, last_name, password, user_active, created_at, updated_at from users where id = $1`
+	query := `select id, email, first_name, last_name, password, active, created_at, updated_at from users where id = $1`
 
 	var user User
 	row := db.QueryRowContext(ctx, query, id)
@@ -164,7 +146,7 @@ func (u *PostgresRepository) Update(user User) error {
 		email = $1,
 		first_name = $2,
 		last_name = $3,
-		user_active = $4,
+		active = $4,
 		updated_at = $5
 		where id = $6
 	`
@@ -211,7 +193,7 @@ func (u *PostgresRepository) Insert(user User) (int, error) {
 	}
 
 	var newID int
-	stmt := `insert into users (email, first_name, last_name, password, user_active, created_at, updated_at)
+	stmt := `insert into users (email, first_name, last_name, password, active, created_at, updated_at)
 		values ($1, $2, $3, $4, $5, $6, $7) returning id`
 
 	err = db.QueryRowContext(ctx, stmt,
@@ -266,18 +248,4 @@ func (u *PostgresRepository) PasswordMatches(plainText string, user User) (bool,
 	}
 
 	return true, nil
-}
-
-func (u *PostgresRepository) UpdateRefreshToken(refreshToken string, id int) error {
-	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
-	defer cancel()
-
-	stmt := `update users set refresh_token = $1 where id = $2`
-
-	_, err := db.ExecContext(ctx, stmt, refreshToken, id)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Succesfully updated refresh token")
-	return nil
 }
