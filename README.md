@@ -15,9 +15,9 @@ broker-service - брокер, через который проходят все
 ![restr_of_nonunique_registr](https://github.com/user-attachments/assets/a065275e-aca6-45d0-b363-0fdc8ccf1f4f)  
    
 Лог регистрации пользователя:  
-   
+ 
 ![registr_log](https://github.com/user-attachments/assets/107d45b2-63b7-4532-a5b7-6e1152ca87b9)  
-   
+  
 Аутентификация через в обход брокера:  
    
 ![auth_through_auth-service](https://github.com/user-attachments/assets/48884c02-ed6a-4c83-b24f-dee39ac8f3cd)  
