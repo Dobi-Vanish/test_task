@@ -11,10 +11,6 @@ type jsonResponse struct {
 	Error   bool        `json:"error"`
 	Message string      `json:"message"`
 	Data    interface{} `json:"data"`
-	Tokens  struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-	} `json:"tokens"`
 }
 
 // readJSON tries to read the body of a request and converts it into JSON
