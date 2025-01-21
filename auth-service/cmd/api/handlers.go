@@ -74,7 +74,7 @@ func (app *Config) Registrate(w http.ResponseWriter, r *http.Request) {
 	}
 	payload := jsonResponse{
 		Error:   false,
-		Message: fmt.Sprintf("Succesfully created new user, id: %s", id),
+		Message: fmt.Sprintf("Succesfully created new user, id: %d", id),
 	}
 
 	app.
