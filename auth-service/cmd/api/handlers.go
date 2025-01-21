@@ -1,7 +1,9 @@
 package main
 
 import (
+	"auth-service/data"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -20,6 +22,63 @@ type UserData struct {
 	RefreshToken       string
 	HashedRefreshToken string
 	AccessToken        string
+}
+
+type User struct {
+	ID        int       `json:"id"`
+	Email     string    `json:"email"`
+	FirstName string    `json:"first_name,omitempty"`
+	LastName  string    `json:"last_name,omitempty"`
+	Password  string    `json:"-"`
+	Active    int       `json:"active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type contextKey string
+
+const userIDKey contextKey = "userID"
+
+// Registrate insert new user to the database
+func (app *Config) Registrate(w http.ResponseWriter, r *http.Request) {
+	var requestPayload struct {
+		Email     string `json:"email"`
+		FirstName string `json:"first_name,omitempty"`
+		LastName  string `json:"last_name,omitempty"`
+		Password  string `json:"password"`
+		Active    int    `json:"active"`
+	}
+
+	err := app.readJSON(w, r, &requestPayload)
+	if err != nil {
+		app.errorJSON(w, err, http.StatusBadRequest)
+		return
+	}
+	user := User{
+		Email:     requestPayload.Email,
+		FirstName: requestPayload.FirstName,
+		LastName:  requestPayload.LastName,
+		Password:  requestPayload.Password,
+		Active:    requestPayload.Active,
+	}
+	id, err := app.Repo.Insert(data.User(user))
+	if err != nil {
+		app.errorJSON(w, err, http.StatusBadRequest)
+		return
+	}
+	err = app.logRequest("registrations", fmt.Sprintf("%s has been registrated", user.Email))
+	if err != nil {
+		fmt.Println("Error logging of user has benn authenticated:", err)
+		app.errorJSON(w, err, http.StatusInternalServerError)
+		return
+	}
+	payload := jsonResponse{
+		Error:   false,
+		Message: fmt.Sprintf("Succesfully created new user, id: %s", id),
+	}
+
+	app.
+		writeJSON(w, http.StatusAccepted, payload)
 }
 
 func (app *Config) Authenticate(w http.ResponseWriter, r *http.Request) {
@@ -61,29 +120,31 @@ func (app *Config) Authenticate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = app.logRequest("authentication", fmt.Sprintf("%s logged in", user.Email))
-
-	payload := jsonResponse{
-		Error:   false,
-		Message: fmt.Sprintf("Logged in user %s", user.Email),
-		Data:    user,
-		Tokens: struct {
-			AccessToken  string `json:"access_token"`
-			RefreshToken string `json:"refresh_token"`
-		}{
-			AccessToken:  userData.AccessToken,
-			RefreshToken: userData.RefreshToken,
-		},
+	if err != nil {
+		fmt.Println("Error logging of user has benn authenticated:", err)
+		app.errorJSON(w, err, http.StatusInternalServerError)
+		return
 	}
+
 	err = validateRefreshToken(userData.HashedRefreshToken, userData.RefreshToken)
 	if err != nil {
 		fmt.Println("Error in auth service, invalid refresh token")
 		return
 	}
 	fmt.Println("Refresh tokens validated")
-	err = app.Repo.UpdateRefreshToken(userData.HashedRefreshToken, userData.ID)
-	if err != nil {
-		fmt.Println("Error in auth service, refresh token hasn't been updated")
-		return
+	http.SetCookie(w, &http.Cookie{
+		Name:     "access_token",
+		Value:    userData.AccessToken,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		Expires:  time.Now().Add(15 * time.Minute),
+	})
+	payload := jsonResponse{
+		Error:   false,
+		Message: fmt.Sprintf("Logged in user %s", user.Email),
+		Data:    user,
 	}
 	app.writeJSON(w, http.StatusAccepted, payload)
 }
@@ -170,4 +231,58 @@ func generateAccessToken(userID int, ip, secretKey string) (string, error) {
 	}
 
 	return tokenString, nil
+}
+
+// authTokenMiddleware auths users to get access to some pages only by having access token
+func (app *Config) authTokenMiddleware(secretKey string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+			cookie, err := r.Cookie("access_token")
+			if err != nil {
+				app.errorJSON(w, errors.New("unauthorized"), http.StatusUnauthorized)
+				return
+			}
+			tokenString := cookie.Value
+			claims := &jwt.MapClaims{
+				"sub": userIDKey,
+			}
+			token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+				return []byte(secretKey), nil
+			})
+
+			if err != nil || !token.Valid {
+				app.errorJSON(w, errors.New("token is not valid"), http.StatusUnauthorized)
+				return
+			}
+
+			userID, ok := (*claims)["sub"].(float64)
+			if !ok {
+				app.errorJSON(w, errors.New("invalid token claims"), http.StatusUnauthorized)
+				return
+			}
+
+			ctx := context.WithValue(r.Context(), userIDKey, int(userID))
+			r = r.WithContext(ctx)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// GetAllUsers retrieves all users from the database, sort them by points
+func (app *Config) GetAllUsers(w http.ResponseWriter, r *http.Request) {
+	users, err := app.Repo.GetAll()
+	if err != nil {
+		app.errorJSON(w, errors.New("couldn't fetch All users"), http.StatusBadRequest)
+		return
+	}
+
+	payload := jsonResponse{
+		Error:   false,
+		Message: fmt.Sprintf("Fetched all users"),
+		Data:    users,
+	}
+
+	app.writeJSON(w, http.StatusAccepted, payload)
+
 }
