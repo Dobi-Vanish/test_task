@@ -74,8 +74,6 @@ func (u *PostgresTestRepository) ResetPassword(password string, user User) error
 	return nil
 }
 
-func (u *PostgresTestRepository) UpdateRefreshToken(refreshToken string, id int) error { return nil }
-
 // PasswordMatches uses Go's bcrypt package to compare a user supplied password
 // with the hash we have stored for a given user in the database. If the password
 // and hash match, we return true; otherwise, we return false.
