@@ -18,4 +18,6 @@ broker-service - брокер, через который проходят все
 Отправка лога через gRPC:  
 ![grpc_log_test](https://github.com/user-attachments/assets/96a9dfbe-d911-439b-b88b-88e8f836701c)  
 ![grpc_log_test_successfull](https://github.com/user-attachments/assets/fef6e768-6a57-42aa-9e55-446f166d33cd)  
+Тестирование лога через фронт, логи этого можно наблюдать на скринах с MongoDB с подписями "some kind of data":  
+![logs_test](https://github.com/user-attachments/assets/b05148b6-249e-4bf7-8cb4-9e46f289ffd4)  
 
